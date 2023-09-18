@@ -2,13 +2,24 @@
 set -euo pipefail
 source common.sh
 
-while getopts 'f:n:h' OPTION; do
+QUIET=""
+qecho(){
+	if [ -z "${QUIET}" ]; then
+		echo -n ${1}
+	fi
+}
+
+
+while getopts 'f:n:qh' OPTION; do
 	case "${OPTION}" in
 		f)
 			[ -f "${OPTARG}" ] && ENVFILE="${OPTARG}" || die "Parameters file ${OPTARG} not found" 2
 			;;
 		n)
 			VMNAME="${OPTARG}"
+			;;
+		q)
+			QUIET="true"
 			;;
 		h)
 			usage && exit 0
@@ -34,18 +45,18 @@ if [ $(uname -o) == "Darwin" ]; then
 	timeout=180
 	count=0
 
-	echo -n "Waiting for IP: "
+	qecho "Waiting for IP: "
 	until grep -q -i "${VMMAC}" -B1 -m1 /var/db/dhcpd_leases | head -1 | awk -F= '{ print $2 }'; do
 		count=$((count + 1))
 		if [[ ${count} -ge ${timeout} ]]; then
 			break
 		fi
 		sleep 1
-		echo -n "."
+		qecho "."
 	done
 	VMIP=$(grep -i "${VMMAC}" -B1 -m1 /var/db/dhcpd_leases | head -1 | awk -F= '{ print $2 }')
 elif [ $(uname -o) == "GNU/Linux" ]; then
-	echo -n "Waiting for IP..."
+	qecho "Waiting for IP..."
 	timeout=180
 	count=0
 	while [ $(virsh domifaddr ${VMNAME} | awk -F'[ /]+' '/ipv/ {print $5}' | wc -l) -ne 1 ]; do
@@ -54,11 +65,15 @@ elif [ $(uname -o) == "GNU/Linux" ]; then
 				break
 			fi
 			sleep 1
-			echo -n "."
+			qecho "."
 	done
 	VMIP=$(virsh domifaddr ${VMNAME} | awk -F'[ /]+' '/ipv/ {print $5}' )
 else
 	die "Unsupported operating system" 2
 fi
 
-printf "\nVM IP: ${VMIP}\n"
+if [ -z "${QUIET}" ]; then
+	printf "\nVM IP: ${VMIP}\n"
+else
+	echo "${VMIP}"
+fi

@@ -23,7 +23,13 @@ while getopts 'f:n:h' OPTION; do
 done
 
 if [ ! -d "${VMFOLDER}" ]; then
-  mkdir ${VMFOLDER}
+	mkdir ${VMFOLDER}
+fi
+
+# FIXME shardy workaround for DNS issues
+IRONIC_HOST=${IRONIC_HOST:-$(${SCRIPTDIR}/vm_ip.sh -q -n ${CLUSTER_VMNAME})}
+if [ -z "${IRONIC_HOST}" ]; then
+	die "Could not detect IRONIC_HOST - either set variable or ensure CLUSTER_VMNAME refers to a running VM"
 fi
 
 cd ${VMFOLDER}
@@ -49,11 +55,9 @@ SUSHY_EMULATOR_LIBVIRT_URI = u'qemu:///system'
 SUSHY_EMULATOR_IGNORE_BOOT_DEVICE = True
 EOF
 
-# run podman if does not exists
-# FIXME shardy workaround for DNS issues
-IRONIC_HOST=${IRONIC_HOST:-$(kubectl get ingress metal3-metal3-ironic -o jsonpath='{.status.loadBalancer.ingress[0].ip}')}
+# run sushy-tools via podman if it's not already running
 if [ $(sudo podman ps -f status=running -f name=sushy-tools -q | wc -l) -ne 1 ];then
-  sudo podman run -d --net host --privileged --name sushy-tools \
+  sudo podman run -d --rm --net host --privileged --name sushy-tools \
   --add-host boot.ironic.suse.baremetal:${IRONIC_HOST} --add-host api.ironic.suse.baremetal:${IRONIC_HOST} --add-host inspector.ironic.suse.baremetal:${IRONIC_HOST} \
   -v ./sushy-tools/sushy-emulator.conf:/etc/sushy/sushy-emulator.conf:Z \
   -v /var/run/libvirt:/var/run/libvirt:Z \
@@ -61,9 +65,11 @@ if [ $(sudo podman ps -f status=running -f name=sushy-tools -q | wc -l) -ne 1 ];
   -p 8000:8000 \
   quay.io/metal3-io/sushy-tools:latest sushy-emulator
 
-  # Open firewall to enable VM -> sushy access via the libvirt bridge
-  sudo firewall-cmd --add-port=8000/tcp --zone libvirt
-  sudo firewall-cmd --list-all --zone libvirt
+  if [ "${VM_NETWORK}" != "default" ]; then
+    # Open firewall to enable VM -> sushy access via the libvirt bridge
+    sudo firewall-cmd --add-port=8000/tcp --zone libvirt
+    sudo firewall-cmd --list-all --zone libvirt
+  fi
 fi
 echo "Finished starting sushy-tools podman"
 
@@ -79,9 +85,11 @@ fi
 
 if [ $(sudo podman ps -f status=running -f name=bmh-image-cache -q | wc -l) -ne 1 ]; then
   sudo podman run -dit --name bmh-image-cache -p 8080:80 -v ./bmh-image-cache:/usr/local/apache2/htdocs/ docker.io/library/httpd:2.4
-  # Open firewall to enable VM -> cache access via the libvirt bridge
-  sudo firewall-cmd --add-port=8080/tcp --zone libvirt
-  sudo firewall-cmd --list-all --zone libvirt
+  if [ "${VM_NETWORK}" != "default" ]; then
+    # Open firewall to enable VM -> cache access via the libvirt bridge
+    sudo firewall-cmd --add-port=8080/tcp --zone libvirt
+    sudo firewall-cmd --list-all --zone libvirt
+  fi
 fi
 echo "Finished starting sushy-tools podman"
 
