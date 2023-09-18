@@ -32,7 +32,7 @@ echo "Creating virtual baremetal host"
 
 qemu-img create -f qcow2 $VMNAME.qcow2 30G
 #virt-install --name $VMNAME --memory 4096 --vcpus 2 --disk $VMNAME.qcow2 --boot uefi --import --network network=${VM_NETWORK} --osinfo detect=on --noautoconsole --print-xml 1 > $VMNAME.xml
-virt-install --name $VMNAME --memory 4096 --vcpus 2 --disk $VMNAME.qcow2 --import --network network=${VM_NETWORK} --osinfo detect=on --noautoconsole --print-xml 1 > $VMNAME.xml
+virt-install --name $VMNAME --memory 4096 --vcpus 2 --disk $VMNAME.qcow2,bus=virtio --import --network network=${VM_NETWORK} --osinfo detect=on --noautoconsole --print-xml 1 > $VMNAME.xml
 virsh define $VMNAME.xml
 
 echo "Finished creating virtual node"
@@ -51,7 +51,7 @@ EOF
 
 # run podman if does not exists
 # FIXME shardy workaround for DNS issues
-IRONIC_HOST=${IRONIC_HOST:-192.168.123.227}
+IRONIC_HOST=${IRONIC_HOST:-$(kubectl get ingress metal3-metal3-ironic -o jsonpath='{.status.loadBalancer.ingress[0].ip}')}
 if [ $(sudo podman ps -f status=running -f name=sushy-tools -q | wc -l) -ne 1 ];then
   sudo podman run -d --net host --privileged --name sushy-tools \
   --add-host boot.ironic.suse.baremetal:${IRONIC_HOST} --add-host api.ironic.suse.baremetal:${IRONIC_HOST} --add-host inspector.ironic.suse.baremetal:${IRONIC_HOST} \
@@ -72,6 +72,9 @@ mkdir -p bmh-image-cache
 IMG_FILENAME=$(basename ${IMG_TO_USE})
 if [ ! -f bmh-image-cache/${IMG_FILENAME} ]; then
   curl -Lk ${IMG_TO_USE} > bmh-image-cache/${IMG_FILENAME}
+  pushd bmh-image-cache
+  md5sum ${IMG_FILENAME} | tee ${IMG_FILENAME}.md5sum
+  popd
 fi
 
 if [ $(sudo podman ps -f status=running -f name=bmh-image-cache -q | wc -l) -ne 1 ]; then
@@ -116,14 +119,14 @@ metadata:
   namespace: default
   labels:
     cluster-role: control-plane
-  annotations:
-    inspect.metal3.io: disabled
 spec:
   online: true
   image:
-    url: "http://$IP_ADDR:8080/$IMG_FILENAME"
+    url: "http://$IP_ADDR:8080/${IMG_FILENAME}.md5sum"
+    checksum: "http://$IP_ADDR:8080/${IMG_FILENAME}.md5sum"
   bootMACAddress: $NODEMAC
   bootMode: legacy
+  hardwareProfile: libvirt
   bmc:
     address: redfish-virtualmedia+http://$IP_ADDR:8000/redfish/v1/Systems/$NODEID
     disableCertificateVerification: true
