@@ -130,7 +130,7 @@ metadata:
 spec:
   online: true
   image:
-    url: "http://$IP_ADDR:8080/${IMG_FILENAME}.md5sum"
+    url: "http://$IP_ADDR:8080/${IMG_FILENAME}"
     checksum: "http://$IP_ADDR:8080/${IMG_FILENAME}.md5sum"
   bootMACAddress: $NODEMAC
   bootMode: legacy
