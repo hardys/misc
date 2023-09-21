@@ -168,7 +168,7 @@ if [ -f ${BASEDIR}/combustion/script ]; then
 		FILENAME=$(basename ${file})
 		envsubst < ${file} > ${TMPDIR}/combustion/${FILENAME}
 		chmod a+x ${TMPDIR}/combustion/${FILENAME}
-		echo "./${FILENAME} $@" >> ${TMPDIR}/combustion/script
+		echo "./${FILENAME} \$@" >> ${TMPDIR}/combustion/script
 	done
 fi
 
