@@ -1,5 +1,5 @@
 #!/bin/bash
-# combustion: network
+# combustion: network ${COMBUSTION_EXTRA_MARKERS}
 set -euo pipefail
 
 # Redirect output to the console

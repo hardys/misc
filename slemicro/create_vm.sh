@@ -41,6 +41,7 @@ SSHPUB="${SSHPUB:-${HOME}/.ssh/id_rsa.pub}"
 VMNAME="${VMNAME:-slemicro}"
 VM_STATIC_IP=${VM_STATIC_IP:-}
 VM_GATEWAY_IP=${VM_GATEWAY_IP:-"192.168.122.1"}
+COMBUSTION_EXTRA_MARKERS=""
 REGISTER="${REGISTER:-false}"
 CERTMANAGERVERSION="${CERTMANAGERVERSION:-latest}"
 RANCHERBOOTSTRAPSKIP="${RANCHERBOOTSTRAPSKIP:-false}"
@@ -154,6 +155,11 @@ if [ -f ${BASEDIR}/combustion/script ]; then
 		export SSHCONTENT=$(cat ${SSHPUB})
 	fi
 
+	# If static-ip specified we need to enable combustion --prepare
+	if [ ! -z "${VM_STATIC_IP}" ]; then
+		export COMBUSTION_EXTRA_MARKERS="prepare"
+	fi
+
 	# Parse the file and copy it to the final ISO
 	envsubst < ${BASEDIR}/combustion/script > ${TMPDIR}/combustion/script
 	
@@ -162,7 +168,7 @@ if [ -f ${BASEDIR}/combustion/script ]; then
 		FILENAME=$(basename ${file})
 		envsubst < ${file} > ${TMPDIR}/combustion/${FILENAME}
 		chmod a+x ${TMPDIR}/combustion/${FILENAME}
-		echo "./${FILENAME}" >> ${TMPDIR}/combustion/script
+		echo "./${FILENAME} $@" >> ${TMPDIR}/combustion/script
 	done
 fi
 

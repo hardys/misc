@@ -1,5 +1,4 @@
 #!/bin/bash
-# combustion: network prepare
 set -euxo pipefail
 
 # Adapted from https://github.com/openSUSE/combustion#perform-modifications-in-the-initrd-environment
