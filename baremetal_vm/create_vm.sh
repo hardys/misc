@@ -110,13 +110,143 @@ echo "Node MAC: $NODEMAC"
 # We create custom BMH yamls using the data we collected earlier
 # Note the metadata name must be in lowercase
 BMH_NAME=$(echo "${VMNAME}" | tr '[:upper:]' '[:lower:]')
-echo "Creating the BMH resource yaml file to the output vbmc folder"
+echo "Creating the BMH resource yaml file to the output folder ${VMFOLDER}"
+
+function bmh_network_config() {
+  if [ ! -z "${VM_STATIC_IP}" ]; then
+cat <<EOF
+  networkData:
+    name: ${BMH_NAME}-networkdata
+  preprovisioningNetworkDataName: ${BMH_NAME}-networkdata
+EOF
+  fi
+}
+
+function bmh_network_data() {
+  cidr="${VM_STATIC_IP}/${VM_STATIC_PREFIX}"
+  network=$(ipcalc --no-decorate -n ${cidr})
+  netmask=$(ipcalc --no-decorate -m ${cidr})
+  config="{
+    \"links\": [
+        {
+            \"id\": \"eth0\",
+            \"type\": \"phy\",
+            \"ethernet_mac_address\": \"${NODEMAC}\"
+        }
+    ],
+    \"networks\": [
+        {
+            \"id\": \"network0\",
+            \"type\": \"ipv4\",
+            \"link\": \"eth0\",
+            \"ip_address\": \"${VM_STATIC_IP}\",
+            \"netmask\": \"${netmask}\",
+            \"network_id\": \"network0\",
+            \"routes\": [
+                {
+                    \"network\": \"0.0.0.0\",
+                    \"netmask\": \"0.0.0.0\",
+                    \"gateway\": \"${VM_STATIC_GATEWAY}\"
+                }
+            ]
+        }
+    ],
+    \"services\": [
+        {
+            \"type\": \"dns\",
+            \"address\": \"${VM_STATIC_DNS}\"
+        }
+
+]
+}
+"
+  echo -n "${config}" | base64 -w0
+}
+
+function bmh_userdata_config() {
+  if [ ! -z "${VM_STATIC_IP}" -a ! -z "${VM_STATIC_IGNITION}" ]; then
+cat <<EOF
+  userData:
+    name: ${BMH_NAME}-userdata
+EOF
+  fi
+}
+
+function bmh_user_data() {
+  network_setup_service=$(cat ${SCRIPTDIR}/suse-network-setup.service | sed ':a;N;$!ba;s/\n/\\n/g')
+  network_setup_script=$(cat ${SCRIPTDIR}/suse-network-setup.sh | jq -sRr @uri)
+  config='
+{
+  "ignition": {
+    "version": "3.3.0"
+  },
+  "passwd": {
+    "users": [
+      {
+        "name": "root",
+        "passwordHash": "$y$j9T$/t4THH10B7esLiIVBROsE.$G1lyxfy/MoFVOrfXSnWAUq70Tf3mjfZBIe18koGOuXB"
+      }
+    ]
+  },
+  "systemd": {
+    "units": [{
+      "name": "suse-network-setup.service",
+      "enabled": true,
+      "contents": "'${network_setup_service}'"
+    }]
+  },
+  "storage": {
+    "filesystems": [
+      {
+        "device": "/dev/disk/by-label/ROOT",
+        "format": "btrfs",
+        "mountOptions": [
+          "subvol=/@/usr/local"
+        ],
+        "path": "/usr/local",
+        "wipeFilesystem": false
+      }
+    ],
+    "files": [{
+      "path": "/usr/local/bin/suse-network-setup.sh",
+      "mode": 488,
+      "contents": { "source": "data:,'${network_setup_script}'" }
+    }]
+  }
+}
+'
+  #echo ${config} > /tmp/shdebug.json
+  #sudo podman run --pull=always --rm -i quay.io/coreos/ignition-validate:release - < /tmp/shdebug.json
+  echo -n "${config}" | base64 -w0
+}
+
+function bmh_user_data_cloud_init() {
+  config='
+#cloud-config
+chpasswd:
+  list: |
+    root:foo
+  expire: false
+ssh_pwauth: true
+users:
+  - name: shardy
+    plain_text_passwd: foo
+    lock_passwd: false
+    groups: users, admin
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    shell: /bin/bash
+runcmd:
+  - echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
+  - systemctl restart ssh
+'
+  echo -n "${config}" | base64 -w0
+}
+
 cat << EOF > $VMNAME.yaml
 apiVersion: v1
 kind: Secret
 metadata:
   name: ${BMH_NAME}-credentials
-  namespace: default
 type: Opaque
 data:
   username: Zm9vCg==
@@ -126,7 +256,6 @@ apiVersion: metal3.io/v1alpha1
 kind: BareMetalHost
 metadata:
   name: ${BMH_NAME}
-  namespace: default
   labels:
     cluster-role: control-plane
 spec:
@@ -142,6 +271,34 @@ spec:
     address: redfish-virtualmedia+http://$IP_ADDR:8000/redfish/v1/Systems/$NODEID
     disableCertificateVerification: true
     credentialsName: ${BMH_NAME}-credentials
+$(bmh_network_config)
+$(bmh_userdata_config)
 EOF
+
+if [ ! -z "${VM_STATIC_IP}" ]; then
+  cat << EOF >> $VMNAME.yaml
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${BMH_NAME}-networkdata
+type: Opaque
+data:
+  networkData: $(bmh_network_data)
+EOF
+fi
+
+if [ ! -z "${VM_STATIC_IP}" -a ! -z "${VM_STATIC_IGNITION}" ]; then
+  cat << EOF >> $VMNAME.yaml
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${BMH_NAME}-userdata
+type: Opaque
+data:
+  userData: $(bmh_user_data)
+EOF
+fi
 
 echo "Done - now kubectl apply -f ${VMFOLDER}/$VMNAME.yaml"

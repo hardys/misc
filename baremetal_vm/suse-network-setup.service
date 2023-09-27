@@ -1,0 +1,12 @@
+[Unit]
+Description=Setup static network config from config-drive
+After=getty.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/suse-network-setup.sh
+StandardOutput=journal+console
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target
