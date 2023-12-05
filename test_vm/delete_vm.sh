@@ -70,4 +70,6 @@ fi
 [ -f ${VMFOLDER}/ignition-and-combustion-${VMNAME}.iso ] && rm -f ${VMFOLDER}/ignition-and-combustion-${VMNAME}.iso
 [ "${EXTRADISKS}" != false ] && rm -f ${VMFOLDER}/${VMNAME}-extra-disk-*.raw
 
-exit 0
+if [ ! -z "${VM_STATIC_IP}" ]; then
+  ssh-keygen -R ${VM_STATIC_IP} -f /home/shardy/.ssh/known_hosts
+fi
