@@ -39,6 +39,15 @@ EXTRADISKS="${EXTRADISKS:-false}"
 VM_STATIC_IP=${VM_STATIC_IP:-}
 set +a
 
+if [ ! -z "${VM_STATIC_IP}" ]; then
+	ssh-keygen -R ${VM_STATIC_IP} -f ${HOME}/.ssh/known_hosts
+else
+	VM_IP=$(vm_ip ${VMNAME})
+	if [ ! -z "${VM_IP}" ]; then
+	  ssh-keygen -R ${VM_IP} -f ${HOME}/.ssh/known_hosts
+	fi
+fi
+
 if [ $(uname -o) == "Darwin" ]; then
 # Stop and delete the VM using UTM
 	OUTPUT=$(
@@ -70,7 +79,3 @@ fi
 [ -f ${VMFOLDER}/${VMNAME}.qcow2 ] && rm -f ${VMFOLDER}/${VMNAME}.qcow2
 [ -f ${VMFOLDER}/ignition-and-combustion-${VMNAME}.iso ] && rm -f ${VMFOLDER}/ignition-and-combustion-${VMNAME}.iso
 [ "${EXTRADISKS}" != false ] && rm -f ${VMFOLDER}/${VMNAME}-extra-disk-*.raw
-
-if [ ! -z "${VM_STATIC_IP}" ]; then
-  ssh-keygen -R ${VM_STATIC_IP} -f ${HOME}/.ssh/known_hosts
-fi
